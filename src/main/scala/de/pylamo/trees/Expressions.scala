@@ -46,6 +46,7 @@ case class SVariable(name: String, override val exprType: SType = SNoTypeYet) ex
       case SIntType => List(LLOAD(data.variableMap(name)))
       case SStringType => List(ALOAD(data.variableMap(name)))
       case SFloatType => List(DLOAD(data.variableMap(name)))
+      case SInductiveType(_) => List(ALOAD(data.variableMap(name)))
     }
 }
 
@@ -53,10 +54,35 @@ case class SVariable(name: String, override val exprType: SType = SNoTypeYet) ex
 
 case class ArgumentList(arguments: List[SExpression]) extends STree
 
-case class DataConstructor(name: String, arguments: ArgumentList) extends SExpression {
+trait FunctionLike extends SExpression {
+
+
+  def getJavaTypeName(stype: SType): String = stype match {
+    case SBooleanType => "Z"
+    case SIntType => "J"
+    case SFloatType => "D"
+    case SStringType => "Ljava/lang/String;"
+    case SUnitType => "V"
+    case SInductiveType(name) => s"L$name;"
+    case _ => throw new RuntimeException("Wrong type")
+  }
+
+}
+
+case class DataConstructor(name: String, arguments: ArgumentList) extends FunctionLike {
 
 
   override def exprType = SInductiveType(name)
+
+
+  def getJavaMethodDescriptor(program: SProgram): String = {
+    val constructor = getDataCase(program).get
+    val params = constructor.argTypes.foldLeft("") {
+      case (str, t) =>
+        str + getJavaTypeName(t)
+    }
+    "(" + params + ")V"
+  }
 
   //TODO: Improve massively
   def getData(program: SProgram): Option[SData] = {
@@ -76,25 +102,17 @@ case class DataConstructor(name: String, arguments: ArgumentList) extends SExpre
   }
 }
 
-case class FunctionCallReference(name: String, argumentList: ArgumentList,
-                                 override val exprType: SType) extends SExpression {
+case class FunctionCallReference(name: String, arguments: ArgumentList,
+                                 override val exprType: SType) extends FunctionLike {
   def getFunction(program: SProgram): Option[SFunction] = {
     program.functions.find(_.name == name)
   }
 
-  private def getJavaTypeName(stype: SType): String = stype match {
-    case SBooleanType => "Z"
-    case SIntType => "J"
-    case SFloatType => "D"
-    case SStringType => "Ljava/lang/String;"
-    case SUnitType => "V"
-    case _ => throw new RuntimeException("Wrong type")
-  }
-
-  def getJavaMethodDescriptor: String = {
-    val params = argumentList.arguments.foldLeft("") {
-      case (str, expr) =>
-        str + getJavaTypeName(expr.exprType)
+  def getJavaMethodDescriptor(program: SProgram): String = {
+    val function = getFunction(program).get
+    val params = function.parameters.parameters.foldLeft("") {
+      case (str, t) =>
+        str + getJavaTypeName(t.parameterType)
     }
     "(" + params + ")" + getJavaTypeName(exprType)
   }

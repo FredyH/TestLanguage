@@ -15,6 +15,7 @@ case class SFunction(name: String, returnType: SType, parameters: ParameterList,
     case SFloatType => "D"
     case SStringType => "Ljava/lang/String;"
     case SUnitType => "V"
+    case SInductiveType(dataName) => s"L$dataName;"
     case _ => throw new RuntimeException("Wrong type")
   }
 

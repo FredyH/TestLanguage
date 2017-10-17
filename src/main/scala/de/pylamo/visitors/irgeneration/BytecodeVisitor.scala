@@ -3,6 +3,7 @@ package de.pylamo.visitors.irgeneration
 import de.pylamo.language._
 import de.pylamo.trees._
 import de.pylamo.visitors.AbstractVisitor
+import de.pylamo.visitors.semantics.SemanticsVisitor.visitArgumentList
 import org.opalj.ba._
 import org.opalj.br.{FieldType, PC}
 import org.opalj.br.instructions._
@@ -13,7 +14,7 @@ import scala.language.postfixOps
 /**
   * Created by Fredy on 15.10.2017.
   */
-case class BytecodeVisitorData(className: String, var variableMap: Map[String, Int]) {
+case class BytecodeVisitorData(program: SProgram, className: String, var variableMap: Map[String, Int]) {
   private var labelIndex = 0
   private var variableIndex = 0
 
@@ -49,10 +50,18 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
 
   override def visitExpression(expression: SExpression,
                                data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = expression match {
-
+    case expr@DataConstructor(name, args) =>
+      val dataCase = expr.getDataCase(data.program).get
+      val argsCode = visitArgumentList(args, data)
+      List[CodeElement[InstructionElement]](
+        NEW(name),
+        DUP
+      ) ++ argsCode ++ List[CodeElement[InstructionElement]](
+        INVOKESPECIAL(dataCase.name, isInterface = false, "<init>", expr.getJavaMethodDescriptor(data.program))
+      )
     case expr@FunctionCallReference(name, argumentList, exprType) =>
       val argsCode = visitArgumentList(argumentList, data)
-      argsCode ++ List[CodeElement[InstructionElement]](INVOKESTATIC(data.className, false, name, expr.getJavaMethodDescriptor))
+      argsCode ++ List[CodeElement[InstructionElement]](INVOKESTATIC(data.className, false, name, expr.getJavaMethodDescriptor(data.program)))
     case expr@UnaryOperation(subExpr) =>
       visitExpression(subExpr, data) ++ expr.getBytecodeInstructions(data)
     case expr: BinaryOperation =>
@@ -72,14 +81,16 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       val varIndex = data.nextVariableIndex()
       data.variableMap += (name -> varIndex)
       val expressionCode = visitExpression(expr, data)
-      expr.exprType match {
-        case SBooleanType => List(ISTORE(varIndex))
-        case SIntType => List(LSTORE(varIndex))
-        case SStringType => List(ASTORE(varIndex))
-        case SFloatType => List(DSTORE(varIndex))
+      val storeExpression = expr.exprType match {
+        case SBooleanType => List[CodeElement[InstructionElement]](ISTORE(varIndex))
+        case SIntType => List[CodeElement[InstructionElement]](LSTORE(varIndex))
+        case SStringType => List[CodeElement[InstructionElement]](ASTORE(varIndex))
+        case SFloatType => List[CodeElement[InstructionElement]](DSTORE(varIndex))
+        case SInductiveType(_) => List[CodeElement[InstructionElement]](ASTORE(varIndex))
       }
-    case ExpressionStatement(expr) =>
-      visitExpression(expr, data)
+      expressionCode ++ storeExpression
+    case ExpressionStatement(expression) =>
+      visitExpression(expression, data)
     case IfStatement(condition, trueList, falseList, ifType) =>
       val trueLabel = Symbol("trueLabel" + data.nextLabelIndex())
       val falseLabel = Symbol("falseLabel" + data.nextLabelIndex())
@@ -109,8 +120,12 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
         List[CodeElement[InstructionElement]](DRETURN)
       case SBooleanType =>
         List[CodeElement[InstructionElement]](IRETURN)
+      case SInductiveType(_) =>
+        List[CodeElement[InstructionElement]](ARETURN)
+      case SStringType =>
+        List[CodeElement[InstructionElement]](ARETURN)
     }
-    METHOD(PUBLIC STATIC, function.name, function.getJavaMethodDescriptor, CODE(code ++ returnCode: _*))
+    METHOD(PUBLIC STATIC, function.name, function.getJavaMethodDescriptor, CODE(code ++ returnCode: _*).MAXLOCALS(data.nextVariableIndex()))
   }
 
   override def visitParameter(parameter: SParameter, data: BytecodeVisitorData): Any = {
@@ -121,7 +136,7 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
 
   override def visitData(dataDeclaration: SData, data: BytecodeVisitorData): List[ClassFile] = {
     val interface = CLASS(
-      accessModifiers = PUBLIC INTERFACE,
+      accessModifiers = INTERFACE ABSTRACT,
       thisType = dataDeclaration.name
     )
     val subClassFiles = dataDeclaration.cases.map(c => visitDataCase(c, data).toDA()._1)
@@ -209,7 +224,7 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       CODE(superCode ++ assignmentCode :+ CodeElement.instructionToInstructionElement(RETURN): _*)
     )
     CLASS(
-      accessModifiers = PUBLIC,
+      accessModifiers = PUBLIC SUPER,
       thisType = dataCase.name,
       fields = FIELDS(fields: _*),
       interfaceTypes = List(dataCase.dataName),
@@ -218,7 +233,7 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
   }
 
   def visitProgram(program: SProgram): List[ClassFile] = {
-    val data = BytecodeVisitorData("Program", Map.empty)
+    val data = BytecodeVisitorData(program, "Program", Map.empty)
     visitProgram(program, data)
   }
 

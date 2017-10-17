@@ -2,6 +2,7 @@ package de.pylamo.visitors.semantics
 
 import de.pylamo.trees._
 import de.pylamo.visitors.TreeBuildVisitor
+import de.pylamo.visitors.semantics.TypeVisitor.visitArgumentList
 
 /**
   * Created by Fredy on 13.10.2017.
@@ -17,7 +18,7 @@ object SemanticsVisitor extends TreeBuildVisitor[SemanticsVisitorInfo] {
   override def visitExpression(expression: SExpression, data: SemanticsVisitorInfo): SExpression = expression match {
     case FunctionCallReference(name, argumentList, _) if data.constructors.contains(name) =>
       val constructor = data.constructors(name)
-      assume(constructor.argTypes.isEmpty, "Data constructor supplied invalid amount of arguments")
+      assume(constructor.argTypes.size == argumentList.arguments.size, "Data constructor supplied invalid amount of arguments")
       DataConstructor(name, visitArgumentList(argumentList, data))
     case FunctionCallReference(name, argumentList, _) =>
       val functionOpt = data.program.functions.find(_.name == name)

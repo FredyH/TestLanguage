@@ -32,5 +32,4 @@ abstract class AbstractVisitor[E, +R] {
   def visitData(dataDeclaration: SData, data: E): R
 
   def visitDataCase(dataCase: SDataCase, data: E): R
-
 }

@@ -13,6 +13,8 @@ class TreeBuildVisitor[E] extends AbstractVisitor[E, STree] {
   }
 
   override def visitExpression(expression: SExpression, data: E): SExpression = expression match {
+    case DataConstructor(name, args) =>
+      DataConstructor(name, visitArgumentList(args, data))
     case FunctionCallReference(name, args, t) =>
       FunctionCallReference(name, visitArgumentList(args, data), t)
     case expression@UnaryOperation(u) =>
@@ -59,7 +61,7 @@ class TreeBuildVisitor[E] extends AbstractVisitor[E, STree] {
   }
 
   override def visitDataCase(dataCase: SDataCase, data: E): SDataCase = {
-    SDataCase(dataCase.name, dataCase.argTypes, dataCase.name)
+    SDataCase(dataCase.name, dataCase.argTypes, dataCase.dataName)
   }
 
   override def visitProgram(program: SProgram, data: E): SProgram = {

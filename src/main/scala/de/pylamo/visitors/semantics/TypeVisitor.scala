@@ -30,8 +30,6 @@ object TypeVisitor extends TreeBuildVisitor[TypeVisitorInfo] {
 
   override def visitExpression(expression: SExpression, data: TypeVisitorInfo): SExpression = {
     expression match {
-      case DataConstructor(name, args) =>
-        DataConstructor(name, args)
       case SVariable(name, _) =>
         SVariable(name, data.variableTypes(name))
       case Addition(left, right, _) =>
