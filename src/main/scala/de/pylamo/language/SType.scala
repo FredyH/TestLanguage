@@ -9,32 +9,36 @@ sealed trait SType {
   def stackSize = 1
 }
 
+sealed trait SPrimitiveType extends SType
+
 case class SInductiveType(name: String) extends SType {
   override def fieldDescriptor = s"L$name;"
 }
 
-case object SBooleanType extends SType {
+case object SBooleanType extends SPrimitiveType {
   override def fieldDescriptor = "Z"
 }
 
-case object SIntType extends SType {
+sealed trait SNumericType extends SPrimitiveType
+
+case object SIntType extends SNumericType {
   override def fieldDescriptor = "J"
 
   override def stackSize = 2
 }
 
-case object SStringType extends SType {
-  override def fieldDescriptor = "Ljava/lang/String;"
-}
-
-case object SUnitType extends SType {
-  override def fieldDescriptor = "Ljava/lang/Void;"
-}
-
-case object SFloatType extends SType {
+case object SFloatType extends SNumericType {
   override def fieldDescriptor = "D"
 
   override def stackSize = 2
+}
+
+case object SStringType extends SPrimitiveType {
+  override def fieldDescriptor = "Ljava/lang/String;"
+}
+
+case object SUnitType extends SPrimitiveType {
+  override def fieldDescriptor = "Ljava/lang/Void;"
 }
 
 case object SNoTypeYet extends SType {

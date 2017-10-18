@@ -19,3 +19,5 @@ libraryDependencies += "de.opal-project" %% "architecture-validation" % "0.8.15"
 libraryDependencies += "de.opal-project" %% "bytecode-assembler" % "0.8.15"
 
 libraryDependencies += "de.opal-project" %% "bytecode-creator" % "0.8.15"
+
+libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.6"

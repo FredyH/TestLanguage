@@ -23,7 +23,7 @@ sealed trait SStatement extends STree {
 }
 
 
-case class LetStatement(name: String, expr: SExpression, variableType: SType = SNoTypeYet) extends SStatement {
+case class LetStatement(name: String, expr: SExpression, variableType: Option[SType]) extends SStatement {
 
 }
 
@@ -33,10 +33,5 @@ case class IfStatement(condition: SExpression,
                        trueList: StatementList,
                        falseList: Option[StatementList] = None,
                        ifType: SType = SNoTypeYet) extends SStatement {
-  override def statementType: SType = falseList match {
-    case Some(statements) if statements.statementType == trueList.statementType =>
-      statements.statementType
-    case None => SUnitType
-    case _ => throw new RuntimeException("failed to type if statement")
-  }
+  override def statementType: SType = ifType
 }

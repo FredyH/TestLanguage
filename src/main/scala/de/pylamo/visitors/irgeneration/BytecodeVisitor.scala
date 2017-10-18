@@ -6,7 +6,7 @@ import de.pylamo.visitors.AbstractVisitor
 import de.pylamo.visitors.semantics.SemanticsVisitor.visitArgumentList
 import org.opalj.ba._
 import org.opalj.br.{FieldType, PC}
-import org.opalj.br.instructions._
+import org.opalj.br.instructions.{INVOKESPECIAL, _}
 import org.opalj.da.ClassFile
 
 import scala.language.postfixOps
@@ -77,7 +77,7 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
 
   override def visitStatement(statement: SStatement,
                               data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = statement match {
-    case LetStatement(name, expr, variableType) =>
+    case LetStatement(name, expr, _) =>
       val varIndex = data.nextVariableIndex()
       data.variableMap += (name -> varIndex)
       val expressionCode = visitExpression(expr, data)
@@ -131,7 +131,6 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
   override def visitParameter(parameter: SParameter, data: BytecodeVisitorData): Any = {
     data.variableMap += (parameter.name -> data.nextVariableIndex(parameter.parameterType.stackSize))
   }
-
 
 
   override def visitData(dataDeclaration: SData, data: BytecodeVisitorData): List[ClassFile] = {
@@ -223,12 +222,62 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       descriptor = s"($descriptorParams)V",
       CODE(superCode ++ assignmentCode :+ CodeElement.instructionToInstructionElement(RETURN): _*)
     )
+
+    val appendFieldCode = dataCase.argTypes.zipWithIndex.foldLeft(List.empty[CodeElement[InstructionElement]]) {
+      case (l, (t, n)) =>
+        val fieldDescriptor = if (t.isInstanceOf[SInductiveType]) "Ljava/lang/Object;" else t.fieldDescriptor
+        val commaCode = if (n >= dataCase.argTypes.size - 1)
+          List.empty[CodeElement[InstructionElement]]
+        else
+          List[CodeElement[InstructionElement]](
+            LoadString(", "),
+            INVOKEVIRTUAL("java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;")
+          )
+        l ++ List[CodeElement[InstructionElement]](
+          ALOAD_0,
+          GETFIELD(dataCase.name, "field" + n, t.fieldDescriptor),
+          INVOKEVIRTUAL("java/lang/StringBuilder", "append", s"($fieldDescriptor)Ljava/lang/StringBuilder;")
+        ) ++ commaCode
+    }
+
+    val parenStartCode = if (dataCase.argTypes.isEmpty)
+      List[CodeElement[InstructionElement]]()
+    else
+      List[CodeElement[InstructionElement]](
+        LoadString("("),
+        INVOKEVIRTUAL("java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;")
+      )
+
+    val parenEndCode = if (dataCase.argTypes.isEmpty)
+      List[CodeElement[InstructionElement]]()
+    else
+      List[CodeElement[InstructionElement]](
+        LoadString(")"),
+        INVOKEVIRTUAL("java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;")
+      )
+
+    val toStringCode = List[CodeElement[InstructionElement]](
+      NEW("java/lang/StringBuilder"),
+      DUP,
+      LoadString(dataCase.name),
+      INVOKESPECIAL("java/lang/StringBuilder", isInterface = false, "<init>", "(Ljava/lang/String;)V")
+    ) ++ parenStartCode ++ appendFieldCode ++ parenEndCode ++ List[CodeElement[InstructionElement]](
+      INVOKEVIRTUAL("java/lang/Object", "toString", "()Ljava/lang/String;"),
+      ARETURN
+    )
+
+    val toString = METHOD(
+      accessModifiers = PUBLIC,
+      name = "toString",
+      descriptor = "()Ljava/lang/String;",
+      code = CODE(toStringCode: _*)
+    )
     CLASS(
       accessModifiers = PUBLIC SUPER,
       thisType = dataCase.name,
       fields = FIELDS(fields: _*),
       interfaceTypes = List(dataCase.dataName),
-      methods = METHODS(constructor)
+      methods = METHODS(constructor, toString)
     )
   }
 

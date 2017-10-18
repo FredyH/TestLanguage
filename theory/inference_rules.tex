@@ -1,0 +1,92 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage{proof}
+\usepackage{amsmath,amssymb,amsthm,textcomp}
+\newcommand{\Int}{\ensuremath{\text{Int}}}
+\newcommand{\Float}{\ensuremath{\text{Float}}}
+\newcommand{\Bool}{\ensuremath{\text{Boolean}}}
+\newcommand{\String}{\ensuremath{\text{String}}}
+\newcommand{\op}{\ensuremath{\circ}}
+
+\begin{document}
+	Typing rules:\\
+	\\	
+	Constant inference:\\
+	\\
+	\infer{t: \Int}{
+		t = \text{IntConstant}
+	}
+	\ \ \
+	\infer{t: \Float}{
+		t = \text{FloatConstant}
+	}
+	\ \ \
+	\infer{t: \Bool}{
+		t = \text{BoolConstant}
+	}
+	\ \ \
+	\infer{t: \String}{
+		t = \text{StringConstant}
+	}\\
+	\\
+	Implicit casts (might change):\\
+	\\
+	\infer{(a + b): \String}{
+		a + (b: \String)
+	}
+	\ \ \
+	\infer{(a + b): \String}{
+		(a: \String) + b
+	}\\
+	\\
+	Numeric and boolean operator typing ($\op$ is any numeric operation, $\circledast$ is any boolean operation):\\
+	\\
+	\infer{(a \op b): t}{
+		a : t
+		& b : t
+	} (where $t$ is numeric)
+	\ \ \ \
+	\infer{(a \circledast b): \Bool}{
+		a : \Bool
+		& b : \Bool
+	}\\
+	\\
+	Comparison operator typing ($\sqsubseteq$ is any numeric comparison operation )\\
+	\\
+	\infer{ (a \ $\sqsubseteq$ \ b): \Bool} {
+		a: t
+		&b: t
+	} (where $t$ is numeric)\\
+	\\
+	Equality typing ($\sim$ is $=$ or $\neq$ )\\
+	\\
+	\infer{ (a \ $\sim$ \ b): \Bool} {
+		a: t
+		&b: t
+	}\\
+	\\
+	Function typing rules
+	\\
+	\infer{f(p_1, ..., p_n) : r}{
+		p_1: t_1
+		&...
+		&p_n : t_n
+		&
+		& f: (t_1, ..., t_n) \rightarrow r
+	}
+	\\
+	\\
+	Data type rules (D is some data constructor that takes parameters of type $t_1, ..., t_n$ to construct):\\
+	\\
+	\infer{\text{D}(p_1, ..., p_n): \text{D}}{
+		p_1: t_1
+		&...
+		&p_n : t_n
+	}
+	\ \ \ \
+	\infer{a: \text{D'}} {
+		a: \text{D}
+	} (where  D case of D')
+	
+	
+	
+\end{document}

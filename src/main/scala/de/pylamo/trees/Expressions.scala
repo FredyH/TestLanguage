@@ -198,7 +198,23 @@ case class StringCast(subExpression: SExpression) extends CastOperation {
   }
 
   override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = subExpression.exprType match {
-    case _ => throw new RuntimeException("Not yet implemented")
+    case SStringType => Nil
+    case SFloatType => List(
+      INVOKESTATIC("java/lang/Double", isInterface = false, "valueOf", "(D)Ljava/lang/Double;"),
+      INVOKEVIRTUAL("java/lang/Object", "toString", "()Ljava/lang/String;")
+    )
+    case SIntType => List(
+      INVOKESTATIC("java/lang/Long", isInterface = false, "valueOf", "(J)Ljava/lang/Long;"),
+      INVOKEVIRTUAL("java/lang/Object", "toString", "()Ljava/lang/String;")
+    )
+    case SBooleanType => List(
+      INVOKESTATIC("java/lang/Boolean", isInterface = false, "valueOf", "(Z)Ljava/lang/Boolean;"),
+      INVOKEVIRTUAL("java/lang/Object", "toString", "()Ljava/lang/String;")
+    )
+    case SInductiveType(_) => List(
+      INVOKEVIRTUAL("java/lang/Object", "toString", "()Ljava/lang/String;")
+    )
+    case t => throw new RuntimeException(s"Invalid type to be casted to string: $t")
   }
 
   override val exprType: SType = SFloatType
@@ -220,6 +236,25 @@ object BinaryOperation {
 }
 
 //region Numeric Binary Operations
+
+case class StringConcatenation(left: SExpression, right: SExpression) extends BinaryOperation {
+  override def newInstance(left: SExpression, right: SExpression, exprType: SType): StringConcatenation =
+    StringConcatenation(left, right)
+
+  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+    List(
+      SWAP,
+      NEW("java/lang/StringBuilder"),
+      DUP_X2,
+      SWAP,
+      INVOKESPECIAL("java/lang/StringBuilder", isInterface = false, "<init>", "(Ljava/lang/String;)V"),
+      INVOKEVIRTUAL("java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;"),
+      INVOKEVIRTUAL("java/lang/Object", "toString", "()Ljava/lang/String;")
+    )
+  }
+
+  override def exprType: SType = SStringType
+}
 
 sealed trait NumericBinaryOperation extends BinaryOperation
 
@@ -315,7 +350,7 @@ case class LessEquals(left: SExpression, right: SExpression) extends ComparisonO
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
-    exprType match {
+    left.exprType match {
       case SIntType => List(LCMP, IFLE(trueLabel), ICONST_0, GOTO(falseLabel), trueLabel, ICONST_1, falseLabel)
       case SFloatType => List(DCMPG, IFLE(trueLabel), ICONST_0, GOTO(falseLabel), trueLabel, ICONST_1, falseLabel)
       case _ => throw new RuntimeException("Wrong type of expression")

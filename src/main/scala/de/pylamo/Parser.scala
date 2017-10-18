@@ -2,9 +2,10 @@ package de.pylamo
 
 import de.pylamo.language._
 import de.pylamo.trees.{SData, _}
+import org.apache.commons.text.StringEscapeUtils
 
 import scala.util.Try
-import scala.util.parsing.combinator.{JavaTokenParsers, PackratParsers, RegexParsers}
+import scala.util.parsing.combinator.{JavaTokenParsers, PackratParsers}
 
 /**
   * Created by Fredy on 12.10.2017.
@@ -15,7 +16,7 @@ object Parser extends JavaTokenParsers with PackratParsers {
 
   //region Basic stuff
 
-  private val keyWords: PackratParser[String] = "def" | "Int" | "Float" | "Boolean" | "if" | "else" | "data"
+  private val keyWords: PackratParser[String] = "def" | "Int" | "Float" | "Boolean" | "if" | "else" | "data" | "Unit"
 
   private implicit class StringHelper(name: String) {
     //TODO: add regex for keyword boundaries
@@ -27,12 +28,20 @@ object Parser extends JavaTokenParsers with PackratParsers {
       (not(keyWords) ~> rep1(acceptIf(Character.isJavaIdentifierStart)("identifier expected but `" + _ + "' found"),
         elem("identifier part", Character.isJavaIdentifierPart(_: Char)))). ^^ (_.mkString)
 
-  lazy val types: PackratParser[SType] = ("Int" | "String" | "Float" | identifier) ^^ {
+  lazy val primitiveType: PackratParser[SType] = ("Int" | "String" | "Float" | "Unit" | "Boolean") ^^ {
     case "Float" => SFloatType
     case "Int" => SIntType
     case "String" => SStringType
-    case s => SInductiveType(s)
+    case "Unit" => SUnitType
+    case "Boolean" => SBooleanType
   }
+
+  lazy val inductiveType: PackratParser[SType] = identifier ^^ {
+    name => SInductiveType(name)
+  }
+
+  lazy val types: PackratParser[SType] = primitiveType | inductiveType
+
   //endregion
 
   lazy val ofType: PackratParser[SType] = ":" ~> types
@@ -45,7 +54,7 @@ object Parser extends JavaTokenParsers with PackratParsers {
   }
 
   lazy val stringConstant: PackratParser[StringConstant] = stringLiteral ^^ {
-    s => StringConstant(s)
+    s => StringConstant(StringEscapeUtils.unescapeJava(s.substring(1, s.length - 1)))
   }
 
   lazy val numberConstant: PackratParser[SExpression] =
@@ -89,8 +98,17 @@ object Parser extends JavaTokenParsers with PackratParsers {
     case (name ~ args) => FunctionCallReference(name, args, SNoTypeYet)
   }
 
+  lazy val cast: PackratParser[CastOperation] = (primitiveType <~ "(") ~ (expr <~ ")") ^^ {
+    case (SFloatType ~ e) =>
+      FloatCast(e)
+    case (SIntType ~ e) =>
+      IntCast(e)
+    case (SStringType ~ e) =>
+      StringCast(e)
+  }
+
   lazy val factor: PackratParser[SExpression] =
-    ("(" ~> expression <~ ")") | functionCall | numberConstant | stringConstant | booleanConstant | variable
+    ("(" ~> expression <~ ")") | cast | functionCall | numberConstant | stringConstant | booleanConstant | variable
 
   lazy val term: PackratParser[SExpression] =
     factor ~ ("*" ~ factor | "/" ~ factor).* ^^ {
@@ -121,8 +139,8 @@ object Parser extends JavaTokenParsers with PackratParsers {
         IfStatement(cond, trueList, falseList)
     }
 
-  lazy val letStatement: PackratParser[SStatement] = (("let".keyword ~> identifier) <~ "=") ~ expression ^^ {
-    case (name ~ e) => LetStatement(name, e)
+  lazy val letStatement: PackratParser[SStatement] = (("let".keyword ~> identifier ~ opt(ofType)) <~ "=") ~ expression ^^ {
+    case (name ~ t ~ e) => LetStatement(name, e, t)
   }
 
   lazy val statement: PackratParser[SStatement] = (ifStatement | letStatement | expressionStatement) <~ opt(rep(";"))

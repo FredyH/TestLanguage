@@ -5,3 +5,7 @@ src/test/
 target/
 output.jar
 Test.s
+theory/inference_rules.aux
+theory/inference_rules.log
+theory/inference_rules.pdf
+theory/inference_rules.synctex.gz
