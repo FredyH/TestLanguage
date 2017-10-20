@@ -7,7 +7,6 @@ import de.pylamo.trees._
   */
 class TreeBuildVisitor[E] extends AbstractVisitor[E, STree] {
 
-
   override def visitArgumentList(argumentList: ArgumentList, data: E): ArgumentList = {
     ArgumentList(argumentList.arguments.map(e => visitExpression(e, data)))
   }
@@ -23,10 +22,11 @@ class TreeBuildVisitor[E] extends AbstractVisitor[E, STree] {
       expression.newInstance(visitExpression(l, data), visitExpression(r, data))
     //These should be leafs
     case expr => expr
-
   }
 
   override def visitStatement(statement: SStatement, data: E): SStatement = statement match {
+    case ms: MatchStatement =>
+      visitMatchStatement(ms, data)
     case IfStatement(cond, trueList, falseList, t) =>
       val newTrueList = visitStatementList(trueList, data)
       val newFalseList = falseList.map(st => visitStatementList(st, data))
@@ -67,5 +67,24 @@ class TreeBuildVisitor[E] extends AbstractVisitor[E, STree] {
   override def visitProgram(program: SProgram, data: E): SProgram = {
     SProgram(program.functions.map(f => visitFunction(f, data)),
       program.dataDeclarations.map(d => visitData(d, data)))
+  }
+
+  override def visitMatchPattern(pattern: MatchPattern, data: E): MatchPattern = pattern match {
+    case ConstructorPattern(name, subPatterns) =>
+      ConstructorPattern(name, subPatterns.map(p => visitMatchPattern(p, data)))
+    case _ =>
+      pattern
+  }
+
+  override def visitMatchCase(matchCase: MatchCase, data: E): MatchCase = {
+    val newPattern = visitMatchPattern(matchCase.pattern, data)
+    val newStatementList = visitStatementList(matchCase.statements, data)
+    MatchCase(newPattern, newStatementList)
+  }
+
+  override def visitMatchStatement(matchStatement: MatchStatement, data: E): MatchStatement = {
+    val newExpression = visitExpression(matchStatement.expression, data)
+    val newCases = matchStatement.cases.map(c => visitMatchCase(c, data))
+    MatchStatement(newExpression, newCases)
   }
 }

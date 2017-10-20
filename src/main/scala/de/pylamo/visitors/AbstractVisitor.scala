@@ -32,4 +32,10 @@ abstract class AbstractVisitor[E, +R] {
   def visitData(dataDeclaration: SData, data: E): R
 
   def visitDataCase(dataCase: SDataCase, data: E): R
+
+  def visitMatchPattern(pattern: MatchPattern, data: E): R
+
+  def visitMatchCase(matchCase: MatchCase, data: E): R
+
+  def visitMatchStatement(matchStatement: MatchStatement, data: E): R
 }

@@ -48,6 +48,6 @@ object Main {
     println("Running program")
     println("---------------------------------------")
     println()
-    """java -jar output.jar""".!<
+    """java -jar -noverify output.jar""".!<
   }
 }

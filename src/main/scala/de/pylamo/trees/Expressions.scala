@@ -1,6 +1,7 @@
 package de.pylamo.trees
 
 import de.pylamo.language._
+import de.pylamo.visitors.irgeneration.BytecodeVisitor.CodeList
 import de.pylamo.visitors.irgeneration.BytecodeVisitorData
 import org.opalj.ba.{CODE, CodeElement, InstructionElement}
 import org.opalj.br.instructions._
@@ -11,42 +12,64 @@ import org.opalj.br.instructions._
 sealed abstract class SExpression(_expressionType: SType = SNoTypeYet) extends STree {
   def exprType: SType = _expressionType
 
-  def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]]
+  def getBytecodeInstructions(data: BytecodeVisitorData): CodeList
 }
+
+sealed trait MatchPattern extends STree
+
+case object Wildcard extends MatchPattern
+
+case class ConstructorPattern(name: String, subPatterns: List[MatchPattern]) extends MatchPattern
+
+
+
+sealed trait ConstantExpression extends SExpression with MatchPattern
 
 //region Constants/Variables
 
-case class BooleanConstant(value: Boolean) extends SExpression(SBooleanType) {
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+case class BooleanConstant(value: Boolean) extends ConstantExpression {
+
+  override def exprType: SType = SBooleanType
+
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     if (value)
       List(ICONST_1)
     else
       List(ICONST_0)
 }
 
-case class FloatConstant(value: Double) extends SExpression(SFloatType) {
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+case class FloatConstant(value: Double) extends ConstantExpression {
+
+  override def exprType: SType = SFloatType
+
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     List(LoadDouble(value))
 }
 
-case class IntConstant(value: Long) extends SExpression(SIntType) {
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+case class IntConstant(value: Long) extends ConstantExpression {
+
+  override def exprType: SType = SIntType
+
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     List(LoadLong(value))
 }
 
-case class StringConstant(value: String) extends SExpression(SStringType) {
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+case class StringConstant(value: String) extends ConstantExpression {
+
+  override def exprType: SType = SStringType
+
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     List(LoadString(value))
 }
 
-case class SVariable(name: String, override val exprType: SType = SNoTypeYet) extends SExpression {
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+case class SVariable(name: String, override val exprType: SType = SNoTypeYet) extends SExpression with MatchPattern {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     exprType match {
-      case SBooleanType => List(ILOAD(data.variableMap(name)))
-      case SIntType => List(LLOAD(data.variableMap(name)))
-      case SStringType => List(ALOAD(data.variableMap(name)))
-      case SFloatType => List(DLOAD(data.variableMap(name)))
-      case SInductiveType(_) => List(ALOAD(data.variableMap(name)))
+      case SBooleanType => List(ILOAD(data.getVariable(name)))
+      case SIntType => List(LLOAD(data.getVariable(name)))
+      case SStringType => List(ALOAD(data.getVariable(name)))
+      case SFloatType => List(DLOAD(data.getVariable(name)))
+      case SInductiveType(_) => List(ALOAD(data.getVariable(name)))
     }
 }
 
@@ -117,7 +140,7 @@ case class FunctionCallReference(name: String, arguments: ArgumentList,
     "(" + params + ")" + getJavaTypeName(exprType)
   }
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     throw new RuntimeException("Not implemented")
 }
 
@@ -139,7 +162,7 @@ object UnaryOperation {
 case class BNegation(subExpression: SExpression, override val exprType: SType = SNoTypeYet) extends UnaryOperation {
   def newInstance(arg: SExpression, exprType: SType = exprType): BNegation = BNegation(arg, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = exprType match {
     case SBooleanType => List(Symbol("Hello"), ICONST_1, IXOR)
     case _ => throw new RuntimeException("Wrong type of expression")
   }
@@ -148,7 +171,7 @@ case class BNegation(subExpression: SExpression, override val exprType: SType = 
 case class UnaryMinus(subExpression: SExpression, override val exprType: SType = SNoTypeYet) extends UnaryOperation {
   def newInstance(arg: SExpression, exprType: SType = exprType): UnaryMinus = UnaryMinus(arg, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = exprType match {
     case SIntType => List(INEG)
     case SFloatType => List(DNEG)
     case _ => throw new RuntimeException("Wrong type of expression")
@@ -168,7 +191,7 @@ case class IntCast(subExpression: SExpression) extends CastOperation {
     FloatCast(subExpression)
   }
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] =
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList =
     subExpression.exprType match {
       case SIntType => List()
       case SFloatType => List(D2L)
@@ -183,7 +206,7 @@ case class FloatCast(subExpression: SExpression) extends CastOperation {
     FloatCast(subExpression)
   }
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = subExpression.exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = subExpression.exprType match {
     case SIntType => List(L2D)
     case SFloatType => List()
     case _ => throw new RuntimeException("Wrong type of expression")
@@ -197,7 +220,7 @@ case class StringCast(subExpression: SExpression) extends CastOperation {
     StringCast(subExpression)
   }
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = subExpression.exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = subExpression.exprType match {
     case SStringType => Nil
     case SFloatType => List(
       INVOKESTATIC("java/lang/Double", isInterface = false, "valueOf", "(D)Ljava/lang/Double;"),
@@ -241,7 +264,7 @@ case class StringConcatenation(left: SExpression, right: SExpression) extends Bi
   override def newInstance(left: SExpression, right: SExpression, exprType: SType): StringConcatenation =
     StringConcatenation(left, right)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
     List(
       SWAP,
       NEW("java/lang/StringBuilder"),
@@ -262,7 +285,7 @@ case class Addition(left: SExpression, right: SExpression, override val exprType
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = exprType): BinaryOperation =
     Addition(left, right, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = exprType match {
     case SIntType => List(LADD)
     case SFloatType => List(DADD)
     case _ => throw new RuntimeException("Wrong type of expression")
@@ -273,7 +296,7 @@ case class Subtraction(left: SExpression, right: SExpression, override val exprT
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = exprType): BinaryOperation =
     Subtraction(left, right, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = exprType match {
     case SIntType => List(LSUB)
     case SFloatType => List(DSUB)
     case _ => throw new RuntimeException("Wrong type of expression")
@@ -284,7 +307,7 @@ case class Multiplication(left: SExpression, right: SExpression, override val ex
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = exprType): BinaryOperation =
     Multiplication(left, right, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = exprType match {
     case SIntType => List(LMUL)
     case SFloatType => List(DMUL)
     case _ => throw new RuntimeException("Wrong type of expression")
@@ -295,7 +318,7 @@ case class Division(left: SExpression, right: SExpression, override val exprType
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = exprType): BinaryOperation =
     Division(left, right, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = exprType match {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = exprType match {
     case SIntType => List(LDIV)
     case SFloatType => List(DDIV)
     case _ => throw new RuntimeException("Wrong type of expression")
@@ -314,7 +337,7 @@ case class GreaterEqual(left: SExpression, right: SExpression) extends Compariso
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = SBooleanType): BinaryOperation =
     GreaterEqual(left, right)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
@@ -330,7 +353,7 @@ case class Greater(left: SExpression, right: SExpression) extends ComparisonOper
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = SBooleanType): BinaryOperation =
     Greater(left, right)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
@@ -346,7 +369,7 @@ case class LessEquals(left: SExpression, right: SExpression) extends ComparisonO
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = SBooleanType): BinaryOperation =
     LessEquals(left, right)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
@@ -362,7 +385,7 @@ case class Less(left: SExpression, right: SExpression) extends ComparisonOperati
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = SBooleanType): BinaryOperation =
     Less(left, right)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
@@ -378,11 +401,17 @@ case class Equals(left: SExpression, right: SExpression) extends ComparisonOpera
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = SBooleanType): BinaryOperation =
     Equals(left, right)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
+    Equals.getCmpInstructions(left.exprType, data)
+  }
+}
+
+object Equals {
+  def getCmpInstructions(cmpType: SType, data: BytecodeVisitorData): CodeList = {
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
-    left.exprType match {
+    cmpType match {
       case SBooleanType => List(IF_ICMPEQ(trueLabel), ICONST_0, GOTO(falseLabel), trueLabel, ICONST_1, falseLabel)
       case SIntType => List(LCMP, IFEQ(trueLabel), ICONST_0, GOTO(falseLabel), trueLabel, ICONST_1, falseLabel)
       case SFloatType => List(DCMPG, IFEQ(trueLabel), ICONST_0, GOTO(falseLabel), trueLabel, ICONST_1, falseLabel)
@@ -396,7 +425,7 @@ case class NotEquals(left: SExpression, right: SExpression) extends ComparisonOp
     NotEquals(left, right)
 
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = {
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = {
     val index = data.nextLabelIndex()
     val trueLabel = Symbol("cmpTrue" + index)
     val falseLabel = Symbol("cmpFalse" + index)
@@ -423,7 +452,7 @@ case class BAnd(left: SExpression, right: SExpression, override val exprType: ST
   override def newInstance(left: SExpression, right: SExpression, exprType: SType = exprType): BinaryOperation =
     BAnd(left, right, exprType)
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = List(IAND)
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = List(IAND)
 }
 
 case class BOr(left: SExpression, right: SExpression, override val exprType: SType = SNoTypeYet) extends BooleanBinaryOperation {
@@ -431,7 +460,7 @@ case class BOr(left: SExpression, right: SExpression, override val exprType: STy
     BOr(left, right, exprType)
 
 
-  override def getBytecodeInstructions(data: BytecodeVisitorData): List[CodeElement[InstructionElement]] = List(IOR)
+  override def getBytecodeInstructions(data: BytecodeVisitorData): CodeList = List(IOR)
 }
 
 //endregion

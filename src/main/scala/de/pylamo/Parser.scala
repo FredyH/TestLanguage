@@ -16,7 +16,8 @@ object Parser extends JavaTokenParsers with PackratParsers {
 
   //region Basic stuff
 
-  private val keyWords: PackratParser[String] = "def" | "Int" | "Float" | "Boolean" | "if" | "else" | "data" | "Unit"
+  private val keyWords: PackratParser[String] = "def" | "Int" | "Float" | "Boolean" |
+    "if" | "else" | "data" | "Unit" | "match"
 
   private implicit class StringHelper(name: String) {
     //TODO: add regex for keyword boundaries
@@ -26,9 +27,9 @@ object Parser extends JavaTokenParsers with PackratParsers {
   lazy val identifier: PackratParser[String] =
     "" ~> // handle whitespace
       (not(keyWords) ~> rep1(acceptIf(Character.isJavaIdentifierStart)("identifier expected but `" + _ + "' found"),
-        elem("identifier part", Character.isJavaIdentifierPart(_: Char)))). ^^ (_.mkString)
+        elem("identifier part", Character.isJavaIdentifierPart(_: Char)))).^^(_.mkString)
 
-  lazy val primitiveType: PackratParser[SType] = ("Int" | "String" | "Float" | "Unit" | "Boolean") ^^ {
+  lazy val primitiveType: PackratParser[SPrimitiveType] = ("Int" | "String" | "Float" | "Unit" | "Boolean") ^^ {
     case "Float" => SFloatType
     case "Int" => SIntType
     case "String" => SStringType
@@ -57,7 +58,7 @@ object Parser extends JavaTokenParsers with PackratParsers {
     s => StringConstant(StringEscapeUtils.unescapeJava(s.substring(1, s.length - 1)))
   }
 
-  lazy val numberConstant: PackratParser[SExpression] =
+  lazy val numberConstant: PackratParser[ConstantExpression] =
     (decimalNumber | floatingPointNumber) ^^ {
       case s if !s.contains(".") && Try(s.toLong).isSuccess => IntConstant(s.toLong)
       case s => FloatConstant(s.toDouble)
@@ -79,7 +80,7 @@ object Parser extends JavaTokenParsers with PackratParsers {
 
   lazy val le: PackratParser[Less] = binaryOperator("<", Less)
 
-  lazy val eq: PackratParser[Equals] = binaryOperator("==", Equals)
+  lazy val eq: PackratParser[Equals] = binaryOperator("==", Equals.apply)
 
   lazy val neq: PackratParser[NotEquals] = binaryOperator("!=", NotEquals)
 
@@ -105,10 +106,14 @@ object Parser extends JavaTokenParsers with PackratParsers {
       IntCast(e)
     case (SStringType ~ e) =>
       StringCast(e)
+    case s =>
+      throw new RuntimeException(s"Cannot cast to $s (yet)")
   }
 
+  lazy val constants: PackratParser[ConstantExpression] = numberConstant | stringConstant | booleanConstant
+
   lazy val factor: PackratParser[SExpression] =
-    ("(" ~> expression <~ ")") | cast | functionCall | numberConstant | stringConstant | booleanConstant | variable
+    ("(" ~> expression <~ ")") | cast | functionCall | constants | variable
 
   lazy val term: PackratParser[SExpression] =
     factor ~ ("*" ~ factor | "/" ~ factor).* ^^ {
@@ -143,7 +148,31 @@ object Parser extends JavaTokenParsers with PackratParsers {
     case (name ~ t ~ e) => LetStatement(name, e, t)
   }
 
-  lazy val statement: PackratParser[SStatement] = (ifStatement | letStatement | expressionStatement) <~ opt(rep(";"))
+  lazy val patternList: PackratParser[List[MatchPattern]] = opt(matchPattern ~ ("," ~> matchPattern).*) ^^ {
+    case Some(p ~ l) => p :: l
+    case None => Nil
+  }
+
+  lazy val constructorPattern: PackratParser[ConstructorPattern] = (identifier <~ "(") ~ (patternList <~ ")") ^^ {
+    case (n ~ l) => ConstructorPattern(n, l)
+  }
+
+  lazy val wildCard: PackratParser[MatchPattern] = "_" ^^^ Wildcard
+
+  lazy val matchPattern: PackratParser[MatchPattern] = constructorPattern | wildCard | constants | variable
+
+  lazy val matchCase: PackratParser[MatchCase] =
+    "|" ~> matchPattern ~ ("=>" ~> statement.*) ^^ {
+      case (pattern ~ l) =>
+        MatchCase(pattern, StatementList(l))
+    }
+
+  lazy val matchStatement: PackratParser[MatchStatement] = "match".keyword ~> (expr <~ "{") ~ (matchCase.* <~ "}") ^^ {
+    case (matchExpression ~ cases) =>
+      MatchStatement(matchExpression, cases)
+  }
+
+  lazy val statement: PackratParser[SStatement] = (ifStatement | letStatement | matchStatement | expressionStatement) <~ opt(rep(";"))
   //endregion
 
   //region Functions

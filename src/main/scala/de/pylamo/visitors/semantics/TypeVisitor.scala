@@ -8,25 +8,28 @@ import de.pylamo.visitors.TreeBuildVisitor
   * Created by Fredy on 12.10.2017.
   */
 //TODO: expectedType not used yet, might prove useful later
-case class TypeVisitorInfo(program: SProgram, expectedType: SType, var variableTypes: Map[String, SType])
+case class TypeVisitorInfo(program: SProgram, expectedType: SType, var variableTypes: Map[String, SType]) {
+  //TODO: This is dirty, fix
+  private var matchTypes: List[SType] = Nil
 
-object TypeVisitor extends TreeBuildVisitor[TypeVisitorInfo] {
-
-  private def findDataOrCase(name: String, program: SProgram): Either[SData, SDataCase] = {
-    val dataDeclaration = program.dataDeclarations.find(_.name == name)
-    val dataCase = program.dataDeclarations.flatMap(_.cases).find(_.name == name)
-    (dataDeclaration, dataCase) match {
-      case (_, Some(c)) => Right(c)
-      case (Some(c), _) => Left(c)
-    }
+  def addMatchType(matchType: SType): Unit = {
+    matchTypes = matchType :: matchTypes
   }
 
+  def getMatchType: SType = matchTypes.head
+
+  def popMatchType(): Unit = {
+    matchTypes = matchTypes.tail
+  }
+}
+
+object TypeVisitor extends TreeBuildVisitor[TypeVisitorInfo] {
   private def findCommonSuperType(left: SType, right: SType, program: SProgram): Option[SType] = (left, right) match {
     case (a, b) if a == b => Some(a)
     case (a: SInductiveType, b: SInductiveType) if a.name == b.name => Some(a)
     case (a: SInductiveType, b: SInductiveType) =>
-      val actualData = findDataOrCase(a.name, program)
-      val expectedData = findDataOrCase(b.name, program)
+      val actualData = program.findDataOrCase(a.name).get
+      val expectedData = program.findDataOrCase(b.name).get
       (actualData, expectedData) match {
         case (Right(leftCase), Right(rightCase)) if leftCase == rightCase =>
           Some(a)
@@ -47,8 +50,8 @@ object TypeVisitor extends TreeBuildVisitor[TypeVisitorInfo] {
     case (a, b) if a == b => true
     case (a: SInductiveType, b: SInductiveType) if a.name == b.name => true
     case (a: SInductiveType, b: SInductiveType) =>
-      val actualData = findDataOrCase(a.name, program)
-      val expectedData = findDataOrCase(b.name, program)
+      val actualData = program.findDataOrCase(a.name).get
+      val expectedData = program.findDataOrCase(b.name).get
       (actualData, expectedData) match {
         case (Right(actualCase), Right(expectedCase)) =>
           actualCase == expectedCase
@@ -149,6 +152,53 @@ object TypeVisitor extends TreeBuildVisitor[TypeVisitorInfo] {
     }
   }
 
+
+  override def visitMatchPattern(pattern: MatchPattern, data: TypeVisitorInfo): MatchPattern = pattern match {
+    case SVariable(name, t) =>
+      data.variableTypes += (name -> data.getMatchType)
+      SVariable(name, data.getMatchType)
+    case ConstructorPattern(name, subPatterns) =>
+      val dataCase = data.program.findDataCase(name).get
+      assume(isOfType(SInductiveType(name), data.getMatchType, data.program), "Invalid inductive type in pattern")
+      val newSubPatterns = subPatterns.zipWithIndex.map {
+        case (expr, i) =>
+          data.addMatchType(dataCase.argTypes(i))
+          val result = visitMatchPattern(expr, data)
+          data.popMatchType()
+          result
+      }
+      ConstructorPattern(name, newSubPatterns)
+    case expr: ConstantExpression =>
+      assume(isOfType(expr.exprType, data.getMatchType, data.program), "Wrong constant expression in match type")
+      super.visitMatchPattern(pattern, data)
+    case _ =>
+      super.visitMatchPattern(pattern, data)
+
+  }
+
+  override def visitMatchCase(matchCase: MatchCase, data: TypeVisitorInfo): MatchCase = {
+    val newPattern = visitMatchPattern(matchCase.pattern, data)
+    MatchCase(newPattern, visitStatementList(matchCase.statements, data))
+  }
+
+  override def visitMatchStatement(matchStatement: MatchStatement, data: TypeVisitorInfo): MatchStatement = {
+    val newExpression = visitExpression(matchStatement.expression, data)
+    data.addMatchType(newExpression.exprType)
+    val newCases = matchStatement.cases.map(c => visitMatchCase(c, data))
+    val matchType = newCases match {
+      case s :: xs =>
+        xs.foldLeft(s.statements.statementType) {
+          case (t, c) =>
+            val resultType = findCommonSuperType(t, c.statements.statementType, data.program)
+            assume(resultType.isDefined, "failed to type match statement")
+            resultType.get
+        }
+      case Nil => SUnitType
+    }
+    data.popMatchType()
+    MatchStatement(newExpression, newCases, matchType)
+  }
+
   override def visitData(dataDeclaration: SData, data: TypeVisitorInfo): SData =
     super.visitData(dataDeclaration, data)
 
@@ -160,7 +210,6 @@ object TypeVisitor extends TreeBuildVisitor[TypeVisitorInfo] {
     data.variableTypes += parameter.name -> parameter.parameterType
     parameter
   }
-
 
   override def visitProgram(program: SProgram, data: TypeVisitorInfo): SProgram =
     super.visitProgram(program, data)
