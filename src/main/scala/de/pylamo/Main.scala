@@ -5,7 +5,6 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 
 import de.pylamo.visitors.irgeneration.BytecodeVisitor
 import de.pylamo.visitors.semantics.{SemanticsVisitor, TypeVisitor}
-import org.opalj.bc.Assembler
 
 import scala.io.Source
 import scala.sys.process._
@@ -20,7 +19,7 @@ object Main {
     val parsed = Parser.parseProgram(source)
     val checkedProgram = SemanticsVisitor.visitProgram(parsed)
     val typedProgram = TypeVisitor.visitProgram(checkedProgram)
-    val classFiles = BytecodeVisitor.visitProgram(typedProgram)
+    val classFiles = BytecodeVisitor.visitProgram(typedProgram).map(_.getJavaClass)
     val outputFile = new File("output.jar")
     outputFile.delete()
     val jarOutputStream = new ZipOutputStream(new FileOutputStream(outputFile))
@@ -29,8 +28,8 @@ object Main {
     classFiles.foreach {
       classFile =>
         //Writes class file into jar
-        val fileName = classFile.thisType.asJava + ".class"
-        val assembledClass = Assembler(classFile)
+        val fileName = classFile.getClassName + ".class"
+        val assembledClass = classFile.getBytes
         jarOutputStream.putNextEntry(new ZipEntry(fileName))
         jarOutputStream.write(assembledClass)
         val classFOS = new FileOutputStream("output/" + fileName)
@@ -48,6 +47,6 @@ object Main {
     println("Running program")
     println("---------------------------------------")
     println()
-    """java -jar -noverify output.jar""".!<
+    """java -jar output.jar""".!<
   }
 }

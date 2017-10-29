@@ -1,12 +1,25 @@
 package de.pylamo.language
 
+import org.apache.bcel.generic.{ObjectType, Type}
+
 /**
   * Created by Fredy on 11.10.2017.
   */
+
 sealed trait SType {
   def fieldDescriptor: String
 
   def stackSize = 1
+
+  def getBCELType: Type = this match {
+    case SBooleanType => Type.BOOLEAN
+    case SIntType => Type.LONG
+    case SFloatType => Type.DOUBLE
+    case SStringType => Type.STRING
+    case SUnitType => Type.VOID
+    case SInductiveType(name) => new ObjectType(name)
+    case _ => throw new RuntimeException("Wrong type")
+  }
 }
 
 sealed trait SPrimitiveType extends SType
