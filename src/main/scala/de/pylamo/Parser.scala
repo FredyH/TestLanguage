@@ -29,6 +29,10 @@ object Parser extends JavaTokenParsers with PackratParsers {
       (not(keyWords) ~> rep1(acceptIf(Character.isJavaIdentifierStart)("identifier expected but `" + _ + "' found"),
         elem("identifier part", Character.isJavaIdentifierPart(_: Char)))).^^(_.mkString)
 
+  lazy val alphaIdentifier: PackratParser[String] =
+    "" ~> // handle whitespace
+      (not(keyWords) ~> """\w*""".r).^^(s => s)
+
   lazy val primitiveType: PackratParser[SPrimitiveType] = ("Int" | "String" | "Float" | "Unit" | "Boolean") ^^ {
     case "Float" => SFloatType
     case "Int" => SIntType
@@ -205,9 +209,15 @@ object Parser extends JavaTokenParsers with PackratParsers {
     case (name ~ t) => SDataCase(name, t)
   }
 
-  lazy val data: PackratParser[SData] = (("data".keyword ~> identifier) <~ "=") ~ dataCase ~ ("|" ~> dataCase).* ^^ {
-    case (name ~ c ~ l) =>
-      SData(name, c :: l)
+  lazy val typeParameters: PackratParser[List[String]] =
+    opt(("[" ~> (alphaIdentifier ~ ("," ~> alphaIdentifier).*)) <~ "]") ^^ {
+      case None => Nil
+      case Some(x ~ xs) => x :: xs
+    }
+
+  lazy val data: PackratParser[SData] = (("data".keyword ~> identifier ~ typeParameters) <~ "=") ~ dataCase ~ ("|" ~> dataCase).* ^^ {
+    case (name ~ typeParams ~ c ~ l) =>
+      SData(name, typeParams, c :: l)
   }
 
 

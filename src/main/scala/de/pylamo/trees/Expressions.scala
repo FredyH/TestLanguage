@@ -335,11 +335,13 @@ sealed trait ComparisonOperation extends BinaryOperation {
         data.instructionList.append(new LCMP)
       case SFloatType =>
         data.instructionList.append(new DCMPG())
+      case SBooleanType =>
       case _ => throw new RuntimeException("Wrong type of expression")
     }
   }
 
   override def appendBytecodeInstructions(data: BytecodeVisitorData): Unit = {
+    appendComparisonInstructions(data)
     val ifInstruction = createIfInstruction
     data.instructionList.append(ifInstruction)
     data.instructionList.append(new ICONST(0))
@@ -385,14 +387,14 @@ case class Equals(left: SExpression, right: SExpression) extends ComparisonOpera
     Equals(left, right)
 
 
-  override def appendComparisonInstructions(data: BytecodeVisitorData): Unit = Equals.appendCmpInstruction(exprType, data)
+  override def appendComparisonInstructions(data: BytecodeVisitorData): Unit = Equals.appendCmpInstruction(left.exprType, data)
 
   override protected def createIfInstruction = new IFEQ(null)
 }
 
 object Equals {
+  //TODO: invoke equals for strings, etc.
   def appendCmpInstruction(cmpType: SType, data: BytecodeVisitorData): Unit = {
-    val index = data.nextLabelIndex()
     val ifInstruction = cmpType match {
       case SBooleanType =>
         new IF_ICMPEQ(null)
@@ -450,3 +452,4 @@ case class BOr(left: SExpression, right: SExpression, override val exprType: STy
 }
 
 //endregion
+

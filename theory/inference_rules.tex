@@ -1,16 +1,22 @@
 \documentclass[a4paper,11pt]{article}
 \usepackage{proof}
 \usepackage{amsmath,amssymb,amsthm,textcomp}
-\newcommand{\Int}{\ensuremath{\text{Int}}}
-\newcommand{\Float}{\ensuremath{\text{Float}}}
-\newcommand{\Bool}{\ensuremath{\text{Boolean}}}
-\newcommand{\String}{\ensuremath{\text{String}}}
+\newcommand{\Int}{\ensuremath{\textbf{Int}}}
+\newcommand{\Float}{\ensuremath{\textbf{Float}}}
+\newcommand{\Bool}{\ensuremath{\textbf{Boolean}}}
+\newcommand{\String}{\ensuremath{\textbf{String}}}
+\newcommand{\Unit}{\ensuremath{\textbf{Unit}}}
+
 \newcommand{\op}{\ensuremath{\circ}}
+\newcommand{\slist}[1]{\Big\{ \overset{\vdots}{#1}\Big\} }
+\newcommand{\iif}{\ \textbf{if} \ }
+\newcommand{\ielse}{\ \textbf{else} \ }
 
 \begin{document}
-	Typing rules:\\
+	\textbf{Typing rules}\\
 	\\	
-	Constant inference:\\
+	\\
+	\textbf{Constant inference}:\\
 	\\
 	\infer{t: \Int}{
 		t = \text{IntConstant}
@@ -28,7 +34,7 @@
 		t = \text{StringConstant}
 	}\\
 	\\
-	Implicit casts (might change):\\
+	\textbf{Implicit casts} (might change):\\
 	\\
 	\infer{(a + b): \String}{
 		a + (b: \String)
@@ -36,9 +42,12 @@
 	\ \ \
 	\infer{(a + b): \String}{
 		(a: \String) + b
+	}
+	\ \ \
+	\infer{\slist{\cdot} : \Unit}{
 	}\\
 	\\
-	Numeric and boolean operator typing ($\op$ is any numeric operation, $\circledast$ is any boolean operation):\\
+	\textbf{Numeric and boolean operator typing} ($\op$ is any numeric operation, $\circledast$ is any boolean operation):\\
 	\\
 	\infer{(a \op b): t}{
 		a : t
@@ -50,21 +59,34 @@
 		& b : \Bool
 	}\\
 	\\
-	Comparison operator typing ($\sqsubseteq$ is any numeric comparison operation )\\
+	\textbf{Comparison operator typing} ($\sqsubseteq$ is any numeric comparison operation )\\
 	\\
 	\infer{ (a \ $\sqsubseteq$ \ b): \Bool} {
 		a: t
 		&b: t
 	} (where $t$ is numeric)\\
 	\\
-	Equality typing ($\sim$ is $=$ or $\neq$ )\\
+	\textbf{Equality typing} ($\sim$ is $=$ or $\neq$ )\\
 	\\
 	\infer{ (a \ $\sim$ \ b): \Bool} {
 		a: t
 		&b: t
 	}\\
 	\\
-	Function typing rules
+	\textbf{If typing rules}	\\
+	\infer{(\iif (b) \{ \dots a \} \ielse \{ \dots b \}): t}{
+		a: \Bool
+		& \slist{b: t}
+		& \slist{c: t}
+	}
+	\ \ \ \
+	\infer{(\iif (b) \{ \dots a \}): \Unit}{
+		a: \Bool
+		& \slist{b: t}
+	}
+	\\
+	\\
+	\textbf{Function typing rules}
 	\\
 	\infer{f(p_1, ..., p_n) : r}{
 		p_1: t_1
@@ -75,7 +97,7 @@
 	}
 	\\
 	\\
-	Data type rules (D is some data constructor that takes parameters of type $t_1, ..., t_n$ to construct):\\
+	\textbf{Data type rules} (D is some data constructor that takes parameters of type $t_1, ..., t_n$ to construct):\\
 	\\
 	\infer{\text{D}(p_1, ..., p_n): \text{D}}{
 		p_1: t_1

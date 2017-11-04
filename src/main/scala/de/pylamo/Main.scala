@@ -5,6 +5,7 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 
 import de.pylamo.visitors.irgeneration.BytecodeVisitor
 import de.pylamo.visitors.semantics.{SemanticsVisitor, TypeVisitor}
+import org.apache.bcel.verifier.GraphicalVerifier
 
 import scala.io.Source
 import scala.sys.process._
@@ -15,7 +16,7 @@ import scala.sys.process._
 object Main {
 
   def main(args: Array[String]): Unit = {
-    val source = Source.fromFile("Test.s").getLines().mkString("\n")
+    val source = Source.fromFile("Test.sl").getLines().mkString("\n")
     val parsed = Parser.parseProgram(source)
     val checkedProgram = SemanticsVisitor.visitProgram(parsed)
     val typedProgram = TypeVisitor.visitProgram(checkedProgram)

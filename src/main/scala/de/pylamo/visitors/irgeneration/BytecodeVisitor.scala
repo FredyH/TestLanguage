@@ -3,13 +3,9 @@ package de.pylamo.visitors.irgeneration
 import de.pylamo.language._
 import de.pylamo.trees._
 import de.pylamo.visitors.AbstractVisitor
-import de.pylamo.visitors.semantics.SemanticsVisitor.visitArgumentList
 import org.apache.bcel.Const
+import org.apache.bcel.Const._
 import org.apache.bcel.generic._
-
-import scala.annotation.tailrec
-import org.apache.bcel.Const.{IF_ICMPEQ, _}
-import org.apache.bcel.classfile.JavaClass
 
 import scala.language.postfixOps
 
@@ -29,7 +25,7 @@ case class BytecodeVisitorData(program: SProgram, className: String) {
   private var labelIndex = 0
   private var variableIndex = 0
 
-  private var jumpTargetMap: Map[String, InstructionHandle] = Map.empty
+  private var jumpTargetMaps: List[scala.collection.mutable.Map[String, InstructionHandle]] = List(scala.collection.mutable.Map.empty)
 
   def addVariable(name: String, exprType: SType): Int = {
     val varIndex = nextVariableIndex(exprType.stackSize)
@@ -44,16 +40,24 @@ case class BytecodeVisitorData(program: SProgram, className: String) {
 
   def getVariable(name: String): Int = variableMap(name)
 
+  def putNewJumpTargetMap(): Unit = {
+    jumpTargetMaps ::= scala.collection.mutable.Map.empty[String, InstructionHandle]
+  }
+
+  def popJumpTargetMap(): Unit = {
+    jumpTargetMaps = jumpTargetMaps.tail
+  }
+
   def defineJumpTarget(name: String): InstructionHandle = {
-    defineJumpTarget(name, instructionList.getEnd)
+    defineJumpTarget(name, instructionList.append(new NOP))
   }
 
   def defineJumpTarget(name: String, handle: InstructionHandle): InstructionHandle = {
-    jumpTargetMap += (name -> handle)
+    jumpTargetMaps.head += (name -> handle)
     handle
   }
 
-  def getJumpTarget(name: String): InstructionHandle = jumpTargetMap(name)
+  def getJumpTarget(name: String): InstructionHandle = jumpTargetMaps.head(name)
 
   def nextLabelIndex(): Int = {
     labelIndex += 1
@@ -176,12 +180,17 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       data.instructionList.append(ifInstruction)
       falseList.foreach(l => visitStatementList(l, data))
       val goto = new GOTO(null)
+      data.instructionList.append(goto)
       ifInstruction.setTarget(data.instructionList.append(new NOP()))
       visitStatementList(trueList, data)
+      if (falseList.isEmpty) {
+        data.instructionList.append(InstructionFactory.createPop(trueList.statementType.stackSize))
+      }
       goto.setTarget(data.instructionList.append(new NOP()))
-      if (falseList.isDefined) {
+      if (falseList.isEmpty) {
         data.instructionList.append(loadUnit(data))
       }
+      data.instructionList.append(new NOP)
   }
 
   override def visitParameterList(parameterList: ParameterList, data: BytecodeVisitorData): Any = {
@@ -194,22 +203,13 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
     data.instructionList = instructionList
     visitParameterList(function.parameters, data)
     visitStatementList(function.body, data)
-    function.returnType match {
-      case SIntType =>
-        instructionList.append(new LRETURN())
-      case SFloatType =>
-        instructionList.append(new DRETURN())
-      case SBooleanType =>
-        instructionList.append(new IRETURN())
-      case SInductiveType(_) =>
-        instructionList.append(new ARETURN())
-      case SStringType =>
-        instructionList.append(new ARETURN())
-      case SUnitType =>
-        instructionList.append(new RETURN())
-    }
-    new MethodGen(ACC_STATIC, function.returnType.getBCELType, function.parameters.parameters.map(p => p.parameterType.getBCELType).toArray,
+    instructionList.append(InstructionFactory.createReturn(function.returnType.getBCELType))
+    val methodGen = new MethodGen(ACC_STATIC, function.returnType.getBCELType, function.parameters.parameters.map(p => p.parameterType.getBCELType).toArray,
       null, function.name, "Program", instructionList, data.programClassGen.getConstantPool)
+    methodGen.setMaxStack()
+    methodGen.setMaxLocals()
+    methodGen.removeNOPs()
+    methodGen
   }
 
   override def visitParameter(parameter: SParameter, data: BytecodeVisitorData): Any = {
@@ -228,40 +228,11 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
     interface :: dataDeclaration.cases.map(dc => visitDataCase(dc, data))
   }
 
-  private def getLoadInstruction(varType: SType, localIndex: Int): Instruction = varType match {
-    case SInductiveType(name) =>
-      new ALOAD(localIndex)
-    case SBooleanType =>
-      new ILOAD(localIndex)
-    case SIntType =>
-      new LLOAD(localIndex)
-    case SStringType =>
-      new ALOAD(localIndex)
-    case SUnitType =>
-      new ALOAD(localIndex)
-    case SFloatType =>
-      new DLOAD(localIndex)
-    case _ =>
-      throw new RuntimeException("undexpected type " + varType + " while trying to store variable")
-  }
+  private def getLoadInstruction(varType: SType, localIndex: Int): Instruction =
+    InstructionFactory.createLoad(varType.getBCELType, localIndex)
 
-  private def storeInstruction(varType: SType, localIndex: Int): Instruction = varType match {
-    case SInductiveType(name) =>
-      new ASTORE(localIndex)
-    case SBooleanType =>
-      new ISTORE(localIndex)
-    case SIntType =>
-      new LSTORE(localIndex)
-    case SStringType =>
-      new ASTORE(localIndex)
-    case SUnitType =>
-      //TODO: unit is not done yet
-      new ASTORE(localIndex)
-    case SFloatType =>
-      new DSTORE(localIndex)
-    case _ =>
-      throw new RuntimeException("undexpected type " + varType + " while trying to store variable")
-  }
+  private def storeInstruction(varType: SType, localIndex: Int): Instruction =
+    InstructionFactory.createStore(varType.getBCELType, localIndex)
 
   private def storeObjectVariable(varType: SType,
                                   className: String,
@@ -292,7 +263,7 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       case (t, n) =>
         constructorIL.append(new ALOAD(0))
         constructorIL.append(getLoadInstruction(t, stackIndex))
-        constructorIL.append(storeObjectVariable(t, dataCase.name, getFieldName(n), data))
+        constructorIL.append(factory.createPutField(dataCase.name, getFieldName(n), t.getBCELType))
         stackIndex = stackIndex + t.stackSize
     }
     constructorIL.append(new RETURN())
@@ -305,9 +276,12 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       dataCase.name,
       constructorIL,
       classGen.getConstantPool)
+    constructor.setMaxStack()
+    constructor.setMaxLocals()
 
     val toStringIL = new InstructionList()
     toStringIL.append(factory.createNew("java.lang.StringBuffer"))
+    toStringIL.append(new DUP())
     toStringIL.append(factory.createConstant(dataCase.name))
     toStringIL.append(factory.createInvoke("java.lang.StringBuffer", "<init>", Type.VOID, Array(Type.STRING), Const.INVOKESPECIAL))
     if (dataCase.argTypes.nonEmpty) {
@@ -316,18 +290,20 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
     }
     dataCase.argTypes.zipWithIndex.foreach {
       case (t, n) =>
-        if (n <= dataCase.argTypes.size - 1) {
-          toStringIL.append(factory.createConstant(", "))
-          toStringIL.append(factory.createAppend(Type.STRING))
-        }
         toStringIL.append(new ALOAD(0))
         toStringIL.append(factory.createGetField(dataCase.name, getFieldName(n), t.getBCELType))
         toStringIL.append(factory.createAppend(t.getBCELType))
+        if (n < dataCase.argTypes.size - 1) {
+          toStringIL.append(factory.createConstant(", "))
+          toStringIL.append(factory.createAppend(Type.STRING))
+        }
     }
     if (dataCase.argTypes.nonEmpty) {
       toStringIL.append(factory.createConstant(")"))
       toStringIL.append(factory.createAppend(Type.STRING))
     }
+    toStringIL.append(factory.createInvoke("java.lang.StringBuffer", "toString", Type.STRING, Array(), Const.INVOKEVIRTUAL))
+    toStringIL.append(new ARETURN)
     val toString = new MethodGen(ACC_PUBLIC,
       Type.STRING,
       Array(),
@@ -336,6 +312,8 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       dataCase.name,
       toStringIL,
       classGen.getConstantPool)
+    toString.setMaxStack()
+    toString.setMaxLocals()
     classGen.setMethods(Array(toString.getMethod, constructor.getMethod))
     classGen
   }
@@ -347,7 +325,7 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
 
   //Top of stack has the variable that is being matched against, this means that any match pattern has to make sure
   //it does not leave things on the stack!
-  //TODO: Fix bugs with nested matches
+  //TODO: Fix nested matches
   override def visitMatchPattern(pattern: MatchPattern,
                                  data: BytecodeVisitorData): Unit = pattern match {
     case Wildcard =>
@@ -357,16 +335,19 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       //Here we need nested jumps so we can clean stuff up
       val oldFalse = data.getJumpTarget("false")
       val newFalse = data.defineJumpTarget("false")
-      val proceedLabel = data.defineJumpTarget("proceed")
       data.instructionList.append(getDupInstruction(data.getMatchType))
-      data.instructionList.append(data.instructionFactory.createInstanceOf(new ObjectType(dataCase.name)))
-      data.instructionList.append(new IFEQ(oldFalse))
-      newFalse.setInstruction(data.instructionList.append(getPopInstruction(data.getMatchType)).getInstruction)
+      val goto = new GOTO(null)
+      data.instructionList.append(goto)
+      data.instructionList.move(newFalse, data.instructionList.append(new NOP()))
+      val popHandle = data.instructionList.append(new POP())
       data.instructionList.append(new GOTO(oldFalse))
-      proceedLabel.setInstruction(data.instructionList.append(new NOP()).getInstruction)
+      goto.setTarget(data.instructionList.append(new NOP()))
+      data.instructionList.append(data.instructionFactory.createInstanceOf(new ObjectType(dataCase.name)))
+      data.instructionList.append(new IFEQ(popHandle))
       data.instructionList.append(data.instructionFactory.createCheckCast(new ObjectType(name)))
       subPatterns.zipWithIndex.foreach {
         case (p, n) =>
+          data.instructionList.append(new DUP)
           val fieldName = getFieldName(n)
           val fieldType = dataCase.argTypes(n)
           data.addMatchType(fieldType)
@@ -390,28 +371,43 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
     val endTarget = data.getJumpTarget("matchEnd")
     val trueTarget = data.defineJumpTarget("true")
     val falseTarget = data.defineJumpTarget("false")
+
     data.instructionList.append(getDupInstruction(data.getMatchType))
     visitMatchPattern(matchCase.pattern, data)
-    trueTarget.setInstruction(data.instructionList.append(new NOP()).getInstruction)
+    data.instructionList.move(trueTarget, data.instructionList.append(new NOP()))
+    data.instructionList.append(InstructionFactory.createPop(data.getMatchType.stackSize))
     visitStatementList(matchCase.statements, data)
     data.instructionList.append(new GOTO(endTarget))
-    falseTarget.setInstruction(data.instructionList.append(new NOP).getInstruction)
+    data.instructionList.move(falseTarget, data.instructionList.append(new NOP()))
   }
 
   override def visitMatchStatement(matchStatement: MatchStatement,
                                    data: BytecodeVisitorData): Unit = {
     data.addMatchType(matchStatement.expression.exprType)
+    data.putNewJumpTargetMap()
     visitExpression(matchStatement.expression, data)
     val endTarget = data.defineJumpTarget("matchEnd")
     matchStatement.cases.foreach(c => visitMatchCase(c, data))
-
-    data.instructionList.append(data.instructionFactory.createNew("java/lang/RuntimeException"))
+    val bcelType = matchStatement.expression.exprType.getBCELType
+    val argType = if (bcelType.isInstanceOf[ObjectType]) Type.OBJECT else bcelType
+    data.instructionList.append(data.instructionFactory.createInvoke("java.lang.String", "valueOf", Type.STRING, Array(argType), Const.INVOKESTATIC))
+    data.instructionList.append(data.instructionFactory.createNew("java.lang.StringBuffer"))
     data.instructionList.append(new DUP())
-    data.instructionList.append(data.instructionFactory.createConstant("Match failed, no pattern matched the supplied expression"))
+    data.instructionList.append(data.instructionFactory.createConstant("Match failed, no pattern matched the supplied expression: "))
+    data.instructionList.append(data.instructionFactory.createInvoke("java.lang.StringBuffer", "<init>", Type.VOID, Array(Type.STRING), Const.INVOKESPECIAL))
+    data.instructionList.append(new SWAP())
+    data.instructionList.append(data.instructionFactory.createAppend(Type.STRING))
+    data.instructionList.append(data.instructionFactory.createInvoke("java.lang.StringBuffer", "toString", Type.STRING, Array(), Const.INVOKEVIRTUAL))
+
+    data.instructionList.append(data.instructionFactory.createNew("java.lang.RuntimeException"))
+    data.instructionList.append(new DUP_X1())
+    data.instructionList.append(new DUP_X1())
+    data.instructionList.append(new POP())
     data.instructionList.append(data.instructionFactory.createInvoke("java.lang.RuntimeException", "<init>", Type.VOID, Array(Type.STRING), Const.INVOKESPECIAL))
     data.instructionList.append(new ATHROW())
-    endTarget.setInstruction(data.instructionList.append(new NOP).getInstruction)
+    data.instructionList.move(endTarget, data.instructionList.append(new NOP()))
     data.popMatchType()
+    data.popJumpTargetMap()
   }
 
 
@@ -426,9 +422,13 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
     initIL.append(new DUP())
     initIL.append(factory.createInvoke("Unit", "<init>", Type.VOID, Array(), Const.INVOKESPECIAL))
     initIL.append(factory.createPutStatic("Unit", "unit", new ObjectType("Unit")))
-    val staticInitMethod = new MethodGen(ACC_STATIC, Type.VOID, Array(), Array(), "<clinit>", "Unit", initIL, classGen.getConstantPool).getMethod
-    val initMethod = new MethodGen(ACC_PRIVATE, Type.VOID, Array(), Array(), "<linit>", "Unit", new InstructionList(new RETURN), classGen.getConstantPool).getMethod
-    classGen.setMethods(Array(initMethod, staticInitMethod))
+    val staticInitMethod = new MethodGen(ACC_STATIC, Type.VOID, Array(), Array(), "<clinit>", "Unit", initIL, classGen.getConstantPool)
+    staticInitMethod.setMaxStack()
+    staticInitMethod.setMaxLocals()
+    val initMethod = new MethodGen(ACC_PRIVATE, Type.VOID, Array(), Array(), "<linit>", "Unit", new InstructionList(new RETURN), classGen.getConstantPool)
+    initMethod.setMaxStack()
+    initMethod.setMaxLocals()
+    classGen.setMethods(Array(initMethod.getMethod, staticInitMethod.getMethod))
     classGen
   }
 
@@ -450,8 +450,11 @@ object BytecodeVisitor extends AbstractVisitor[BytecodeVisitorData, Any] {
       case _ =>
         mainIL.append(data.instructionFactory.createInvoke("java.io.PrintStream", "println", Type.VOID, Array(Type.OBJECT), Const.INVOKEVIRTUAL))
     }
+    mainIL.append(new RETURN())
     val otherMethods = program.functions.map(f => visitFunction(f, data).getMethod)
     val mainMethod = new MethodGen(ACC_PUBLIC | ACC_STATIC, Type.VOID, Array(new ArrayType(Type.STRING, 1)), null, "main", "Program", mainIL, data.programClassGen.getConstantPool)
+    mainMethod.setMaxLocals()
+    mainMethod.setMaxStack()
     data.programClassGen.setMethods((mainMethod.getMethod :: otherMethods).toArray)
     getUnitClass :: data.programClassGen :: program.dataDeclarations.flatMap(d => visitData(d, data))
   }

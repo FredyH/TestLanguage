@@ -57,7 +57,7 @@ class TreeBuildVisitor[E] extends AbstractVisitor[E, STree] {
 
   override def visitData(dataDeclaration: SData, data: E): SData = {
     val newCases = dataDeclaration.cases.map(dc => visitDataCase(dc, data))
-    SData(dataDeclaration.name, newCases)
+    SData(dataDeclaration.name, dataDeclaration.typeParams, newCases)
   }
 
   override def visitDataCase(dataCase: SDataCase, data: E): SDataCase = {
