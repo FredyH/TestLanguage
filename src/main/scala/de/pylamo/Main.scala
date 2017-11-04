@@ -16,7 +16,7 @@ import scala.sys.process._
 object Main {
 
   def main(args: Array[String]): Unit = {
-    val source = Source.fromFile("Test.sl").getLines().mkString("\n")
+    val source = Source.fromFile("Test.tl").getLines().mkString("\n")
     val parsed = Parser.parseProgram(source)
     val checkedProgram = SemanticsVisitor.visitProgram(parsed)
     val typedProgram = TypeVisitor.visitProgram(checkedProgram)

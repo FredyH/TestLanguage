@@ -5,6 +5,7 @@ src/test/
 target/
 output.jar
 Test.sl
+Test.tl
 theory/inference_rules.aux
 theory/inference_rules.log
 theory/inference_rules.pdf
