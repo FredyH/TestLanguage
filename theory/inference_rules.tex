@@ -13,7 +13,7 @@
 \newcommand{\ielse}{\ \textbf{else} \ }
 
 \begin{document}
-	\textbf{Typing rules}\\
+	\textbf{Incomplete Typing rules}\\
 	\\	
 	\\
 	\textbf{Constant inference}:\\
@@ -44,7 +44,7 @@
 		(a: \String) + b
 	}
 	\ \ \
-	\infer{\slist{\cdot} : \Unit}{
+	\infer{\slist{a: t} : \Unit}{\slist{a: t}
 	}\\
 	\\
 	\textbf{Numeric and boolean operator typing} ($\op$ is any numeric operation, $\circledast$ is any boolean operation):\\
@@ -61,26 +61,26 @@
 	\\
 	\textbf{Comparison operator typing} ($\sqsubseteq$ is any numeric comparison operation )\\
 	\\
-	\infer{ (a \ $\sqsubseteq$ \ b): \Bool} {
+	\infer{ (a \ \sqsubseteq \ b): \Bool} {
 		a: t
 		&b: t
 	} (where $t$ is numeric)\\
 	\\
 	\textbf{Equality typing} ($\sim$ is $=$ or $\neq$ )\\
 	\\
-	\infer{ (a \ $\sim$ \ b): \Bool} {
+	\infer{ (a \ \sim \ b): \Bool} {
 		a: t
 		&b: t
 	}\\
 	\\
 	\textbf{If typing rules}	\\
-	\infer{(\iif (b) \{ \dots a \} \ielse \{ \dots b \}): t}{
+	\infer{(\iif (a) \{ \dots b \} \ielse \{ \dots c \}): t}{
 		a: \Bool
 		& \slist{b: t}
 		& \slist{c: t}
 	}
 	\ \ \ \
-	\infer{(\iif (b) \{ \dots a \}): \Unit}{
+	\infer{(\iif (a) \{ \dots b \}): \Unit}{
 		a: \Bool
 		& \slist{b: t}
 	}
